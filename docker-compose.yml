@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mercur_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-mercur_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - mercur_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mercur_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mercur_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-mercur_db}
+
+      # Stripe
+      STRIPE_SECRET_API_KEY: ${STRIPE_SECRET_API_KEY}
+      STRIPE_CONNECTED_ACCOUNTS_WEBHOOK_SECRET: ${STRIPE_CONNECTED_ACCOUNTS_WEBHOOK_SECRET}
+
+      # Resend
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+
+      # Algolia
+      ALGOLIA_APP_ID: ${ALGOLIA_APP_ID}
+      ALGOLIA_API_KEY: ${ALGOLIA_API_KEY}
+
+      # TalkJS
+      VITE_TALK_JS_APP_ID: ${VITE_TALK_JS_APP_ID}
+      VITE_TALK_JS_SECRET_API_KEY: ${VITE_TALK_JS_SECRET_API_KEY}
+
+      # CORS
+      STORE_CORS: ${STORE_CORS:-http://localhost:8000}
+      ADMIN_CORS: ${ADMIN_CORS:-http://localhost:7001}
+      VENDOR_CORS: ${VENDOR_CORS:-http://localhost:7000}
+      AUTH_CORS: ${AUTH_CORS:-http://localhost:9000}
+
+      # URLs
+      VENDOR_PANEL_URL: ${VENDOR_PANEL_URL:-http://localhost:7000}
+      STOREFRONT_URL: ${STOREFRONT_URL:-http://localhost:8000}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:9000}
+
+      # Secrets
+      JWT_SECRET: ${JWT_SECRET:-supersecret}
+      COOKIE_SECRET: ${COOKIE_SECRET:-supersecret}
+    ports:
+      - "${BACKEND_PORT:-9000}:9000"
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - mercur_network
+    command: >
+      sh -c "
+        yarn medusa db:create || true &&
+        yarn medusa db:migrate &&
+        yarn start
+      "
+
+networks:
+  mercur_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
