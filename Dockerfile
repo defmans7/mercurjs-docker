@@ -10,11 +10,14 @@ WORKDIR /app
 # Install Yarn if not present
 RUN corepack enable && corepack prepare yarn@stable --activate
 
-# Copy package files
-COPY package.json yarn.lock* ./
+# Copy repository files early so mercur-cli can read config and generate package files
+COPY . .
 
-# Install dependencies
-RUN yarn install --frozen-lockfile
+# Install mercur-cli globally and run it to generate package.json / lock files (if the project uses mercurjs-cli)
+# After that, install dependencies. Prefer frozen lockfile if yarn.lock exists.
+RUN npm install -g mercur-cli && \
+    mercur-cli install && \
+    if [ -f yarn.lock ]; then yarn install --frozen-lockfile; elif [ -f package.json ]; then yarn install; fi
 
 # Rebuild the source code only when needed
 FROM base AS builder
