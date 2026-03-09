@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5432"
     networks:
       - mercur_network
     healthcheck:
@@ -63,7 +63,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-supersecret}
       COOKIE_SECRET: ${COOKIE_SECRET:-supersecret}
     ports:
-      - "${BACKEND_PORT:-9000}:9000"
+      - "9000"
+      - "8000"
+      - "7000"
+      - "7001"
+      - "3000"
     volumes:
       - ./uploads:/app/uploads
     networks:

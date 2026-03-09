@@ -10,21 +10,38 @@ WORKDIR /app
 # Install Yarn if not present
 RUN corepack enable && corepack prepare yarn@stable --activate
 
-# Copy repository files early so mercur-cli can read config and generate package files
-COPY . .
+# Copy only package manifests for each Mercur subproject to leverage Docker cache.
+# If these files change, deps will be reinstalled; otherwise this layer is cached.
+COPY app/admin-panel/package.json app/admin-panel/yarn.lock ./admin-panel/
+COPY app/backend/package.json app/backend/yarn.lock ./backend/
+COPY app/storefront/package.json app/storefront/yarn.lock ./storefront/
+COPY app/vendor-panel/package.json app/vendor-panel/yarn.lock ./vendor-panel/
 
-# Install mercur-cli globally and run it to generate package.json / lock files (if the project uses mercurjs-cli)
-# After that, install dependencies. Prefer frozen lockfile if yarn.lock exists.
-RUN npm install -g mercur-cli && \
-    mercur-cli install && \
-    if [ -f yarn.lock ]; then yarn install --frozen-lockfile; elif [ -f package.json ]; then yarn install; fi
+# Install dependencies for each subproject based on the copied manifests.
+RUN set -eux; \
+    for d in admin-panel backend storefront vendor-panel; do \
+      if [ -f "$d/package.json" ]; then \
+        echo "Installing dependencies in /app/$d"; \
+        if [ -f "$d/yarn.lock" ]; then \
+          (cd "$d" && yarn install --frozen-lockfile); \
+        else \
+          (cd "$d" && yarn install); \
+        fi; \
+      else \
+        echo "No package.json in /app/$d, skipping"; \
+      fi; \
+    done
+
+# Now copy the rest of the application source. This is done after deps are installed
+# so that changes to source files don't invalidate the dependency cache.
+COPY app/ .
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Copy node_modules and project files from deps stage (which already contains /app)
+COPY --from=deps /app .
 
 # Set environment to production
 ENV NODE_ENV=production
@@ -42,10 +59,7 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 medusa
 
-# Copy necessary files
-COPY --from=builder --chown=medusa:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=medusa:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=medusa:nodejs /app/medusa-config.ts ./medusa-config.ts
+# Copy prepared application from builder (includes node_modules and project files)
 COPY --from=builder --chown=medusa:nodejs /app .
 
 # Switch to non-root user
